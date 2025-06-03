@@ -5,58 +5,44 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-
-const mockRecommendations = [
-  {
-    id: 1,
-    player: 'Jayson Tatum',
-    team: 'Boston Celtics',
-    opponent: 'Los Angeles Lakers',
-    sport: 'NBA',
-    prop: 'Points',
-    line: 27.5,
-    recommendation: 'Over',
-    confidence: 5,
-    rationale: 'Tatum has exceeded 27.5 points in 8 of his last 10 games. Lakers defense ranks 24th against forwards.',
-    strategy: 'High-volume scorer exploitation'
-  },
-  {
-    id: 2,
-    player: 'Luka Dončić',
-    team: 'Dallas Mavericks',
-    opponent: 'Golden State Warriors',
-    sport: 'NBA',
-    prop: 'Assists',
-    line: 8.5,
-    recommendation: 'Under',
-    confidence: 4,
-    rationale: 'Warriors fast pace limits Luka\'s assist opportunities. Kyrie Irving\'s return reduces his playmaking load.',
-    strategy: 'Pace and usage rate analysis'
-  },
-  {
-    id: 3,
-    player: 'Nikola Jokić',
-    team: 'Denver Nuggets',
-    opponent: 'Miami Heat',
-    sport: 'NBA',
-    prop: 'Rebounds',
-    line: 12.5,
-    recommendation: 'Over',
-    confidence: 4,
-    rationale: 'Jokic averages 13.2 rebounds vs teams allowing 48+ rebounds per game. Heat rank 28th in rebounding.',
-    strategy: 'Matchup-based rebounding edge'
-  }
-];
+import { useRecommendations, useUpdateRecommendationResult } from '@/hooks/useRecommendations';
+import { useToast } from '@/hooks/use-toast';
 
 const Recommendations = () => {
   const [sportFilter, setSportFilter] = useState('all');
   const [confidenceFilter, setConfidenceFilter] = useState('all');
+  const { data: recommendations = [], isLoading } = useRecommendations(sportFilter, confidenceFilter);
+  const updateResult = useUpdateRecommendationResult();
+  const { toast } = useToast();
 
-  const filteredRecommendations = mockRecommendations.filter(rec => {
-    if (sportFilter !== 'all' && rec.sport !== sportFilter) return false;
-    if (confidenceFilter !== 'all' && rec.confidence < parseInt(confidenceFilter)) return false;
-    return true;
-  });
+  const handleRecordResult = async (recId: string, result: 'win' | 'loss') => {
+    try {
+      await updateResult.mutateAsync({ 
+        id: recId, 
+        result, 
+        correct: result === 'win' 
+      });
+      toast({
+        title: "Result Recorded",
+        description: `Recommendation marked as ${result}`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to record result",
+        variant: "destructive",
+      });
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex-1 bg-gray-50">
+        <Header title="Recommendations" subtitle="Loading..." />
+        <div className="p-6">Loading recommendations...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 bg-gray-50">
@@ -91,7 +77,7 @@ const Recommendations = () => {
 
         {/* Recommendations Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
-          {filteredRecommendations.map((rec) => (
+          {recommendations.map((rec) => (
             <Card key={rec.id} className="hover:shadow-lg transition-shadow">
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -105,38 +91,67 @@ const Recommendations = () => {
               <CardContent>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="font-medium">{rec.prop}</span>
+                    <span className="font-medium">{rec.prop_type}</span>
                     <Badge 
-                      variant={rec.recommendation === 'Over' ? 'default' : 'secondary'}
-                      className={rec.recommendation === 'Over' ? 'bg-green-600' : 'bg-red-600'}
+                      variant={rec.recommendation === 'over' ? 'default' : 'secondary'}
+                      className={rec.recommendation === 'over' ? 'bg-green-600' : 'bg-red-600'}
                     >
                       {rec.recommendation} {rec.line}
                     </Badge>
                   </div>
                   
-                  <div>
-                    <h4 className="font-medium text-sm mb-2">Analysis</h4>
-                    <p className="text-sm text-gray-600">{rec.rationale}</p>
-                  </div>
+                  {rec.rationale && (
+                    <div>
+                      <h4 className="font-medium text-sm mb-2">Analysis</h4>
+                      <p className="text-sm text-gray-600">{rec.rationale}</p>
+                    </div>
+                  )}
                   
-                  <div>
-                    <h4 className="font-medium text-sm mb-1">Strategy</h4>
-                    <p className="text-xs text-gray-500">{rec.strategy}</p>
-                  </div>
+                  {rec.source && (
+                    <div>
+                      <h4 className="font-medium text-sm mb-1">Source</h4>
+                      <p className="text-xs text-gray-500">{rec.source}</p>
+                    </div>
+                  )}
                   
-                  <div className="flex space-x-2">
-                    <Button size="sm" className="flex-1">
-                      Record Result
-                    </Button>
-                    <Button size="sm" variant="outline" className="flex-1">
-                      Add to Combo
-                    </Button>
-                  </div>
+                  {rec.result ? (
+                    <div className="flex items-center justify-center">
+                      <Badge variant={rec.result === 'win' ? 'default' : 'destructive'}>
+                        Result: {rec.result}
+                      </Badge>
+                    </div>
+                  ) : (
+                    <div className="flex space-x-2">
+                      <Button 
+                        size="sm" 
+                        className="flex-1"
+                        onClick={() => handleRecordResult(rec.id, 'win')}
+                      >
+                        Record Win
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="destructive" 
+                        className="flex-1"
+                        onClick={() => handleRecordResult(rec.id, 'loss')}
+                      >
+                        Record Loss
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
+
+        {recommendations.length === 0 && (
+          <Card>
+            <CardContent className="text-center py-8 text-gray-500">
+              <p>No recommendations found matching your filters.</p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Combo Plays Section */}
         <Card>
